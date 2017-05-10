@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Gene Table</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css">
+    <script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.5.5/angular.min.js"></script>
+    <script src="https://d3js.org/d3.v3.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js" integrity="sha256-hwg4gsxgFZhOsEEamdOYGBf13FyQuiTwlAQgxVSNgt4=" crossorigin="anonymous"></script>
+</head>
+<body ng-app="GeneTable">
+<div class="container text-center">
+    <table ng-controller="tableController" ng-cloak="" class="table table-striped table-bordered table-responsive table-hover">
+        <thead>
+        <tr class="bg-success">
+            <td colspan="4">
+                <input type="text" title="search" ng-model="search_key" class="form-control" placeholder="search here..." ng-change="search()"/>
+            </td>
+        </tr>
+        </thead>
+        <tbody>
+        <tr>
+            <td>
+                <table class="table table-striped table-bordered table-responsive table-hover">
+                    <thead>
+                    <tr class="bg-danger">
+                        <td>Alteration</td>
+                        <td>Hugo Symbol</td>
+                        <td>Entrez Gene Id</td>
+                        <td>OncoGene and or TSG</td>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr ng-repeat="item in data">
+                        <td>{{item.alteration}}</td>
+                        <td>{{item.gene.hugoSymbol}}</td>
+                        <td>{{item.gene.entrezGeneId}}</td>
+                        <td>{{item.gene.oncogene || item.gene.tsg}}</td>
+                    </tr>
+                    </tbody>
+                </table>
+            </td>
+            <td>
+                <svg></svg>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+<script type="text/javascript">
+    angular.module('GeneTable', [])
+            .controller('tableController', ['$scope', '$http', function ($scope, $http) {
+
+                $http.get('http://oncokb.org/api/v1/genes/673/variants')
+                        .then(function (resp) {
+                            $scope.data = resp.data;
+                            $scope.completedData = resp.data;
+                        });
+
+                $scope.search = function () {
+                    $scope.data = $scope.completedData.filter(function (item) {
+                        return item.gene.entrezGeneId.toString().indexOf($scope.search_key) >= 0;
+                    })
+                }
+            }]);
+</script>
+<script type="text/javascript">
+
+    $.ajax({
+        url: 'http://oncokb.org/api/v1/genes/673/variants',
+        type: 'GET',
+        crossDomain: true,
+        xhrFields: {
+            withCredentials: true
+        },
+        dataType: 'json'
+    })
+            .done(function (response) {
+                var categories = [],
+                        data = {},
+                        len = response.length;
+                for(var i = 0; i < len; i++){
+                    var term = response[i].consequence.term;
+                    if(categories.indexOf(term) < 0){
+                        categories.push(term);
+                        data[term] = {
+                            term: term,
+                            amount: 1
+                        }
+                    }else {
+                        data[term].amount++;
+                    }
+                }
+                drawBarChart(data)
+            });
+
+    function drawBarChart(data) {
+
+        var width = 400;
+        var height = 800;
+        var colors = ["grey", "blue", "red", "orange", "yellow", "green", "purple", "gold", "skyblue"];
+
+        var svg = d3.select("svg")
+                .attr("width", width)
+                .attr("height", height);
+
+        var padding = {left:30, right:30, top:50, bottom:150};
+
+        var dataname = [],
+                dataset = [];
+        for(var key in data){
+            dataname.push(data[key].term);
+            dataset.push(data[key].amount);
+        }
+
+        var xScale = d3.scale.ordinal()
+                .domain(d3.range(dataset.length))
+                .rangeRoundBands([0, width - padding.left - padding.right]);
+        var yScale = d3.scale.linear()
+                .domain([0,d3.max(dataset)])
+                .range([height - padding.top - padding.bottom, 0]);
+
+        var xAxis = d3.svg.axis()
+                .scale(xScale)
+                .tickFormat(function(d) { return dataname[d] })
+                .orient("bottom");
+
+
+        var yAxis = d3.svg.axis()
+                .scale(yScale)
+                .orient("left");
+
+        var rectPadding = 4;
+
+        var rects = svg.selectAll(".MyRect")
+                .data(dataset)
+                .enter()
+                .append("rect")
+                .attr("class","MyRect")
+                .attr("transform","translate(" + padding.left + "," + padding.top + ")")
+                .attr("x", function(d,i){
+                    return xScale(i) + rectPadding/2;
+                } )
+                .attr("y",function(d){
+                    return yScale(d);
+                })
+                .attr("width", xScale.rangeBand() - rectPadding )
+                .attr("height", function(d){
+                    return height - padding.top - padding.bottom - yScale(d);
+                })
+                .attr("fill", function (d, i) {
+                    return colors[i%colors.length]
+                });
+
+        var texts = svg.selectAll(".MyText")
+                .data(dataset)
+                .enter()
+                .append("text")
+                .attr("class","MyText")
+                .attr("transform","translate(" + padding.left + "," + padding.top + ")")
+                .attr("x", function(d,i){
+                    return xScale(i) + rectPadding/2;
+                } )
+                .attr("y",function(d){
+                    return yScale(d + 15);
+                })
+                .attr("dx",function(){
+                    return (xScale.rangeBand() - rectPadding)/2;
+                })
+                .attr("dy",function(d){
+                    return 20;
+                })
+                .text(function(d){
+                    return d;
+                });
+
+        svg.append("g")
+                .attr("class","axis")
+                .attr("transform","translate(" + padding.left + "," + (height - padding.bottom) + ")")
+                .call(xAxis)
+                .selectAll("text")
+                .style("text-anchor", "end")
+                .attr("dx", "-.8em")
+                .attr("dy", ".15em")
+                .attr("transform", function (d) {
+                    return "rotate(-65)"
+                });
+
+        svg.append("g")
+                .attr("class","axis")
+                .attr("transform","translate(" + padding.left + "," + padding.top + ")")
+                .call(yAxis);
+    }
+</script>
+</body>
+</html>
